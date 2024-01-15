@@ -47,9 +47,119 @@
 
 *1. Terraform Playbook.*
 
+main.tf:
+```
+terraform {
+  required_providers {
+    yandex = {
+      source = "yandex-cloud/yandex"
+    }
+  }
+}
+
+provider "yandex" {
+  token     = "y0_AgAAAAAgmCVfAATuwQAAAADwls3fFTlvS0ksQHuj6uVksPFeH8Goqq4"
+  cloud_id  = "b1ga3ko2a8tfk5f7tbh7"
+  folder_id = "b1g8e5dbjk7p1t1o2hnr"
+  zone      = "ru-central1-a"
+}
+
+resource "yandex_compute_instance" "vm" {
+
+  count = 2
+  name        = "vm${count.index}"
+  platform_id = "standard-v3"
+  zone        = "ru-central1-a"
+
+  resources {
+    cores  = 4
+    memory = 8
+  }
+
+  boot_disk {
+    initialize_params {
+      image_id = "fd8rv9qura2dv7rrg4p2"
+      size = 15
+    }
+  }
+
+  network_interface {
+    subnet_id = yandex_vpc_subnet.subnet-1.id
+    nat       = true
+    }
+    placement_policy {
+      placement_group_id = "${yandex_compute_placement_group.group1.id}"
+    }
+
+  metadata = {
+    user-data = "${file("./meta.yml")}"
+  }
+}
+
+resource "yandex_lb_target_group" "testtg-1" {
+  name      = "testtg1"
+  target {
+    subnet_id = yandex_vpc_subnet.subnet-1.id
+    address   = yandex_compute_instance.vm[0].network_interface.0.ip_address
+  }
+  target {
+    subnet_id = yandex_vpc_subnet.subnet-1.id
+    address   = yandex_compute_instance.vm[1].network_interface.0.ip_address
+  }
+}
+
+resource "yandex_lb_network_load_balancer" "netotest-1" {
+  name = "netotest1"
+  listener {
+    name = "my-list"
+    port = 80
+    external_address_spec {
+      ip_version = "ipv4"
+    }
+  }
+  attached_target_group {
+    target_group_id = yandex_lb_target_group.testtg-1.id
+    healthcheck {
+      name = "http"
+      http_options {
+        port = 80
+        path = "/"
+      }
+    }
+  }
+}
+
+resource "yandex_vpc_network" "network-1" {
+  name = "network1"
+}
+
+resource "yandex_vpc_subnet" "subnet-1" {
+  name           = "subnet1"
+  zone           = "ru-central1-a"
+  v4_cidr_blocks = ["192.168.10.0/24"]
+  network_id     = "${yandex_vpc_network.network-1.id}"
+}
+
+resource "yandex_compute_placement_group" "group1" {
+  name = "test-pg1"
+}
+
+#resource "yandex_compute_placement_group" "group2" {
+#  name = "test-pg2"
+#}
+
+resource "yandex_compute_snapshot" "snapshot-1" {
+  name           = "disk-snapshot"
+  source_disk_id = "${yandex_compute_instance.vm[0].boot_disk[0].disk_id}"
+}
+```
+
 *2. Скриншот статуса балансировщика и целевой группы.*
+![image](https://github.com/duha2060/cloud-balans/assets/80347708/846ea912-3396-4cf3-8e57-96d6a406fb8d)
+
 
 *3. Скриншот страницы, которая открылась при запросе IP-адреса балансировщика.*
+![image](https://github.com/duha2060/cloud-balans/assets/80347708/8ee15dff-0c81-46f2-9cf5-d828c03d412a)
 
 ---
 
